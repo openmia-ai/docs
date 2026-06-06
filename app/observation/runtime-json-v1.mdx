@@ -1,0 +1,253 @@
+---
+title: "Runtime JSON v1"
+description: "Use the OpenMIA Runtime JSON v1 contract for SDKs, webhookers, and custom integrations."
+---
+
+Runtime JSON v1 is the recommended payload contract for SDKs and webhookers. It lets source-specific tools describe sessions, traces, chat rounds, tool calls, model steps, and errors without making the OpenMIA server learn every local event format.
+
+Runtime JSON v1 is sent through the Custom JSON endpoint:
+
+```text
+POST /api/observation/webhooks/custom_json?payload_type=json
+```
+
+## Top-level shape
+
+```json
+{
+  "schemaVersion": "openmia.runtime.v1",
+  "source": {
+    "type": "codex",
+    "adapter": "codex_hooks",
+    "adapterVersion": "0.1.0",
+    "event": "user_prompt_submit"
+  },
+  "session": {
+    "id": "local_session_001",
+    "name": "Local agent session"
+  },
+  "trace": {
+    "id": "trace_local_session_001",
+    "name": "Codex session",
+    "status": "unknown"
+  },
+  "spans": []
+}
+```
+
+## Top-level fields
+
+| Field | Required | Purpose |
+| --- | --- | --- |
+| `schemaVersion` | Yes | Must be `openmia.runtime.v1`. |
+| `source` | Recommended | Identifies the SDK, adapter, adapter version, and event. |
+| `session` | Recommended | Local session identity. The server maps it to an Observation session. |
+| `trace` | Yes | Stable trace identity for the local session or request. |
+| `spans` | Yes | Ordered runtime spans to insert or append. |
+
+## Current display semantics
+
+OpenMIA Webhooker currently uses this runtime display model:
+
+- one local session maps to one trace
+- each user round is a top-level `chat` span with `parentId = null`
+- each user round has a stable `roundId`
+- tool call and tool result spans attach to the relevant chat span
+- the SDK does not send empty round spans
+- the SDK does not send a separate session summary workflow span
+
+This keeps the span tree compact while preserving local session continuity.
+
+## Span fields
+
+```json
+{
+  "id": "turn_1_chat",
+  "parentId": null,
+  "roundId": "turn_1",
+  "name": "Chat turn 1",
+  "type": "chat",
+  "status": "success",
+  "startTime": "2026-06-07T00:00:00Z",
+  "endTime": "2026-06-07T00:00:03Z",
+  "latencyMs": 3000,
+  "input": { "text": "Summarize this repository." },
+  "output": { "text": "This repository contains..." },
+  "metadata": {
+    "event": "UserPromptSubmit"
+  },
+  "modelProvider": "openai",
+  "modelName": "gpt-4.1",
+  "usage": {
+    "promptTokens": 100,
+    "completionTokens": 50,
+    "totalTokens": 150
+  },
+  "cost": "0.0012",
+  "errorMessage": null
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable external span ID. Used for idempotency. |
+| `parentId` | External span ID of the parent span, or `null` for top-level spans. |
+| `roundId` | Stable user round or turn identifier. |
+| `name` | Human-readable span name. |
+| `type` | Span type such as `chat`, `tool`, `llm`, `agent`, `workflow`, `http`, or `custom`. |
+| `status` | `unknown`, `running`, `success`, `error`, or `cancelled`. |
+| `startTime` / `endTime` | ISO timestamps. |
+| `latencyMs` | Optional latency in milliseconds. |
+| `input` / `output` | Observable data or redacted summaries. |
+| `metadata` | Additional source-specific data. |
+| `modelProvider` / `modelName` | Model routing metadata when available. |
+| `usage` | Token usage. |
+| `cost` | Cost as a string when available. |
+| `errorMessage` | Sanitized error message. |
+
+## Codex example
+
+```json
+{
+  "schemaVersion": "openmia.runtime.v1",
+  "source": {
+    "type": "codex",
+    "adapter": "codex_hooks",
+    "adapterVersion": "0.1.0",
+    "event": "post_tool_use"
+  },
+  "session": {
+    "id": "codex_session_42",
+    "name": "codex_session_42",
+    "metadata": {
+      "source": "codex",
+      "adapter": "codex_hooks"
+    }
+  },
+  "trace": {
+    "id": "codex_custom_session_42",
+    "name": "Codex session",
+    "status": "success",
+    "metadata": {
+      "source": "codex_hook_custom_json",
+      "mode": "standard_custom_json"
+    }
+  },
+  "spans": [
+    {
+      "id": "codex_custom_session_42_chat_turn_1",
+      "parentId": null,
+      "roundId": "turn_1",
+      "name": "Chat turn 1",
+      "type": "chat",
+      "status": "unknown",
+      "input": {
+        "text": "Run the test suite."
+      },
+      "metadata": {
+        "event": "UserPromptSubmit",
+        "turn_index": 1
+      }
+    },
+    {
+      "id": "codex_custom_session_42_tool_start_turn_1_shell",
+      "parentId": "codex_custom_session_42_chat_turn_1",
+      "roundId": "turn_1",
+      "name": "Tool start: shell",
+      "type": "tool",
+      "status": "running",
+      "input": {
+        "command": "npm test"
+      },
+      "metadata": {
+        "tool_name": "shell",
+        "tool_call_id": "call_001"
+      }
+    },
+    {
+      "id": "codex_custom_session_42_tool_result_turn_1_shell",
+      "parentId": "codex_custom_session_42_chat_turn_1",
+      "roundId": "turn_1",
+      "name": "Tool result: shell",
+      "type": "tool",
+      "status": "success",
+      "output": {
+        "stdout": "33 tests OK"
+      },
+      "metadata": {
+        "tool_name": "shell",
+        "tool_call_id": "call_001"
+      }
+    }
+  ]
+}
+```
+
+## Claude Code example
+
+```json
+{
+  "schemaVersion": "openmia.runtime.v1",
+  "source": {
+    "type": "claude_code",
+    "adapter": "claude_code_stream_json",
+    "adapterVersion": "0.1.0",
+    "event": "round_flush"
+  },
+  "session": {
+    "id": "claude_session_abc",
+    "name": "Claude Code session"
+  },
+  "trace": {
+    "id": "claude_code_claude_session_abc",
+    "name": "Claude Code session",
+    "status": "success"
+  },
+  "spans": [
+    {
+      "id": "claude_session_abc_round_1_chat",
+      "parentId": null,
+      "roundId": "round_1",
+      "name": "Chat turn 1",
+      "type": "chat",
+      "status": "success",
+      "input": {
+        "text": "Inspect the repository."
+      },
+      "output": {
+        "summary": "Repository inspection completed."
+      }
+    },
+    {
+      "id": "claude_session_abc_round_1_tool_result_read",
+      "parentId": "claude_session_abc_round_1_chat",
+      "roundId": "round_1",
+      "name": "Tool result: read",
+      "type": "tool",
+      "status": "success",
+      "metadata": {
+        "tool_name": "read"
+      }
+    }
+  ]
+}
+```
+
+## Privacy guidance
+
+Runtime JSON may include text input, tool arguments, tool output, and assistant output. SDKs should provide a capture-text setting so teams can choose between full text and length/hash summaries.
+
+<Warning>
+  Do not send API keys, cookies, access tokens, provider secrets, or private credentials in `input`, `output`, or `metadata`.
+</Warning>
+
+## Idempotency guidance
+
+Use stable IDs.
+
+- Keep `trace.id` stable for the local session.
+- Keep span `id` stable for a user round or tool event.
+- Use `parentId` to attach tool spans to the relevant chat span.
+- Use `roundId` to group events belonging to one user turn.
+
+OpenMIA skips duplicate spans but can append new spans to an existing trace.

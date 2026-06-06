@@ -1,0 +1,256 @@
+---
+title: "Observation API reference"
+description: "Use the main Observation ingestion, trace, raw payload, span, and audit APIs."
+---
+
+This page lists the public-facing APIs that integrators commonly use. UI-only and admin-only endpoints are not exhaustively listed here.
+
+## Authentication types
+
+| API type | Auth |
+| --- | --- |
+| Ingestion and proxy APIs | `Authorization: Bearer omia_ing_xxx` integration ingest key. |
+| App UI APIs | OpenMIA App session cookie after Auth login. |
+
+Ingest keys are scoped to one integration and one Project.
+
+## Custom JSON webhook
+
+```text
+POST /api/observation/webhooks/custom_json?payload_type=json
+POST /api/observation/webhooks/custom_json?payload_type=jsonl
+```
+
+Use this endpoint for Custom JSON and Runtime JSON v1.
+
+```bash
+curl -X POST "https://app.openmia.ai/api/observation/webhooks/custom_json?payload_type=json" \
+  -H "Authorization: Bearer omia_ing_xxx" \
+  -H "Content-Type: application/json" \
+  --data @trace.json
+```
+
+Expected result:
+
+- raw payload created or duplicate skipped
+- import job created
+- traces and spans created, merged, or skipped
+
+Common errors:
+
+- missing ingest key
+- disabled integration
+- invalid JSON
+- unsupported payload type
+- trace append window expired
+
+## Runtime JSON v1
+
+Runtime JSON v1 uses the same Custom JSON webhook with `payload_type=json`.
+
+```bash
+curl -X POST "https://app.openmia.ai/api/observation/webhooks/custom_json?payload_type=json" \
+  -H "Authorization: Bearer omia_ing_xxx" \
+  -H "Content-Type: application/json" \
+  --data @runtime.json
+```
+
+The payload must include:
+
+```json
+{
+  "schemaVersion": "openmia.runtime.v1",
+  "source": {},
+  "session": {},
+  "trace": {},
+  "spans": []
+}
+```
+
+See [Runtime JSON v1](/app/observation/runtime-json-v1) for the contract.
+
+## OTLP traces
+
+```text
+POST /api/observation/otel/v1/traces
+```
+
+Accepts OTLP JSON traces. Protobuf is reserved for a later phase.
+
+```bash
+curl -X POST "https://app.openmia.ai/api/observation/otel/v1/traces" \
+  -H "Authorization: Bearer omia_ing_xxx" \
+  -H "Content-Type: application/json" \
+  --data @otlp-traces.json
+```
+
+The integration source must match OpenTelemetry.
+
+## Codex CLI OTLP logs
+
+```text
+POST /api/observation/codex/otel/v1/logs
+POST /api/observation/otel/v1/logs
+```
+
+Accepts OTLP logs JSON from Codex CLI telemetry.
+
+```bash
+curl -X POST "https://app.openmia.ai/api/observation/codex/otel/v1/logs" \
+  -H "Authorization: Bearer omia_ing_xxx" \
+  -H "Content-Type: application/json" \
+  --data @codex-otlp-logs.json
+```
+
+The integration source must be Codex CLI.
+
+## OpenMIA AI Proxy
+
+```text
+POST /api/observation/proxy/openai/v1/chat/completions
+POST /v1/chat/completions
+```
+
+The canonical endpoint is under `/api/observation/proxy`. The `/v1/chat/completions` route is an OpenAI-compatible alias.
+
+```bash
+curl -X POST "https://app.openmia.ai/api/observation/proxy/openai/v1/chat/completions" \
+  -H "Authorization: Bearer omia_ing_xxx" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "model": "gpt-4.1",
+    "messages": [
+      { "role": "user", "content": "Summarize this trace." }
+    ]
+  }'
+```
+
+The proxy forwards to the configured upstream provider and captures observable request, response, usage, tool calls, tool results, errors, and latency.
+
+<Warning>
+  The proxy does not capture or infer hidden chain-of-thought.
+</Warning>
+
+## Raw payload export
+
+```text
+POST /api/observation/raw-payloads/exports
+GET /api/observation/raw-payloads/exports/:id
+GET /api/observation/raw-payloads/exports/:id/download
+```
+
+Create an asynchronous ZIP export from explicit raw payload IDs or the current query selection. Project `admin` or `owner` role is required.
+
+Example request:
+
+```json
+{
+  "selectionMode": "ids",
+  "ids": ["raw_123", "raw_456"]
+}
+```
+
+The download link expires. Audit keeps the manifest snapshot after expiration.
+
+## Trace append lock and unlock
+
+```text
+POST /api/observation/traces/:id/append-unlock
+POST /api/observation/traces/:id/append-lock
+```
+
+Project `admin` or `owner` role is required.
+
+Unlock request:
+
+```json
+{
+  "reason": "Need to move misplaced spans.",
+  "days": 7
+}
+```
+
+Lock request:
+
+```json
+{
+  "reason": "Editing complete."
+}
+```
+
+## Span copy, move, and delete
+
+```text
+POST /api/observation/spans/copy
+POST /api/observation/spans/move
+POST /api/observation/spans/delete
+```
+
+Copy creates new spans. Move changes existing spans. Delete soft-deletes spans and descendants.
+
+Copy example:
+
+```json
+{
+  "spanIds": ["span_123"],
+  "targetTraceId": "trace_456",
+  "targetParentSpanId": null,
+  "includeAncestors": false,
+  "includeDescendants": true,
+  "reason": "Copy useful tool evidence."
+}
+```
+
+Move and delete require an editable source trace.
+
+## Audit list and rollback
+
+```text
+GET /api/observation/audit
+GET /api/observation/audit/:id
+POST /api/observation/audit/:id/rollback
+```
+
+Audit list supports filters such as Project Scope, action, object type, actor, date range, integration, and rollbackable status.
+
+Rollback is available only for supported trace/span/migration operations and only when conflict checks pass.
+
+## Common response shape
+
+Ingestion responses usually include:
+
+```json
+{
+  "success": true,
+  "import_job_id": "job_123",
+  "raw_payload_id": "raw_123",
+  "created": {
+    "sessions": 1,
+    "traces": 1,
+    "spans": 3
+  },
+  "skipped": {
+    "traces": 0,
+    "spans": 0,
+    "payloads": 0
+  },
+  "merged": {
+    "traces": 0
+  },
+  "errors": []
+}
+```
+
+## Error patterns
+
+| Error | Meaning |
+| --- | --- |
+| `AUTH_REQUIRED` | App session is missing for UI API. |
+| `INGESTION_KEY_REQUIRED` | Ingestion request has no bearer key. |
+| `INTEGRATION_DISABLED` | The channel is paused or disabled. |
+| `INVALID_JSON` | Payload could not be parsed. |
+| `DUPLICATE_PAYLOAD` | Raw payload hash already exists. |
+| `TRACE_APPEND_WINDOW_EXPIRED` | Existing trace is locked for append. |
+| `TRACE_READ_ONLY` | Span move or delete was attempted on a locked trace. |
+| `PERMISSION_DENIED` | Current user does not have the required Project role. |
+| `ROLLBACK_CONFLICT` | A later change prevents safe rollback. |

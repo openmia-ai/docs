@@ -1,0 +1,162 @@
+---
+title: "Service architecture"
+description: "Understand how OpenMIA App stores, normalizes, audits, and operates Observation data."
+---
+
+This page describes how the OpenMIA App service handles Observation data after a request reaches the server.
+
+## Request path
+
+```text
+external client or SDK
+  -> integration endpoint
+  -> ingest key authentication
+  -> raw payload storage
+  -> import job
+  -> adaptor normalization
+  -> Project-scoped writes
+  -> audit and health updates
+```
+
+## Raw payload storage
+
+Raw payloads are saved before normalization. A raw payload records:
+
+- Project
+- integration
+- source system
+- payload type
+- content hash
+- size
+- storage reference
+- schema version
+- received time
+
+The raw payload is the source of truth for audit and export. Normalized traces and spans reference it.
+
+## Import job lifecycle
+
+An import job represents one normalization attempt.
+
+Typical statuses:
+
+- `running`
+- `succeeded`
+- `failed`
+- `skipped`
+
+The job records created, merged, skipped, and error counts. It also records trigger type, such as upload, webhook, OTLP HTTP, sync check, migration, or span copy.
+
+## Adaptor registry
+
+The adaptor registry selects one adaptor for a raw payload.
+
+Current adaptor families include:
+
+- Custom JSON adaptor
+- OTLP JSON trace adaptor
+- Codex OTLP logs adaptor
+
+Custom JSON also recognizes Runtime JSON v1 and maps it into the same normalized trace/span model.
+
+## Runtime JSON normalizer
+
+When `schemaVersion` is `openmia.runtime.v1`, the Custom JSON adaptor reads:
+
+- `source`
+- `session`
+- `trace`
+- `spans`
+
+It maps standard fields into normalized Observation records. Source-specific interpretation should already have happened in the SDK or webhooker.
+
+## Idempotency
+
+OpenMIA uses multiple levels of idempotency.
+
+| Level | Behavior |
+| --- | --- |
+| Raw payload | Exact duplicate content hash can be skipped. |
+| Trace | Existing external trace ID is reused for the same Project, integration, and source. |
+| Span | Duplicate external span IDs are skipped inside the trace. |
+
+Append-style imports can create new spans on an existing trace without rewriting the whole trace.
+
+## Trace aggregation
+
+Trace aggregates are updated from spans and payloads.
+
+- start time can move earlier
+- end time can move later
+- latency can be recalculated
+- status can advance through safe transitions
+- output can update when later payloads contain newer output
+- name and input remain conservative by default
+
+## Append window
+
+The append idle window limits automatic merges into old traces. If a trace is outside the idle window, an import can fail with `TRACE_APPEND_WINDOW_EXPIRED`.
+
+Project `admin` and `owner` users can unlock a trace for a limited time.
+
+## Provenance-aware lifecycle
+
+Delete and restore actions respect provenance.
+
+- Deleting a trace soft-deletes the trace bundle but does not delete upstream raw payloads.
+- Deleting a raw payload can hide the normalized data produced by that raw payload.
+- Deleting an import job with a raw payload follows the raw payload chain.
+- Restore uses delete batches where possible so unrelated prior deletes are not revived.
+
+## Migration
+
+Migration moves data between Projects when the actor has `admin` or `owner` role on both sides.
+
+Migration preserves provenance by mapping raw payloads, import jobs, traces, spans, and child entities as needed. Duplicate target data is skipped rather than overwritten.
+
+Migration rollback requires permission on both the current target Project and original source Project.
+
+## Raw payload export worker
+
+Raw payload ZIP exports are asynchronous.
+
+```text
+web request creates export job
+  -> worker claims queued job
+  -> worker streams raw payloads into ZIP
+  -> worker writes manifest
+  -> UI polls progress
+  -> user downloads before expiration
+```
+
+The web process does not synchronously compress raw payloads. This protects ingestion and UI requests from long-running export work.
+
+## Audit events
+
+Audit records user-visible operations such as:
+
+- integration create, update, rotate key, reset error
+- proxy request received, completed, or failed
+- raw payload export create, complete, download, fail, expire
+- trace create, delete, restore, migration
+- span copy, move, delete
+- rollback
+
+Audit is append-only. Rollback creates a new event instead of editing the original event.
+
+## AI Proxy raw content
+
+The AI Proxy captures observable runtime evidence:
+
+- messages
+- model request
+- model response
+- assistant message
+- tool calls and arguments
+- tool results
+- error bodies
+- latency, usage, finish reason, and provider request ID
+
+Transport credentials are omitted. Hidden chain-of-thought is not captured or inferred.
+
+Proxy raw content is stored separately from span attributes and referenced from trace/span detail.

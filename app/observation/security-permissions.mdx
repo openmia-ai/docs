@@ -5,6 +5,15 @@ description: "Understand tenant isolation, roles, ingest keys, raw data, and sof
 
 OpenMIA Observation is multi-tenant by design. Server-side authorization always uses Project IDs and roles, not display names or Project codes.
 
+<CardGroup cols={2}>
+  <Card title="Developer concepts" icon="diagram-project" href="/app/observation/developer-concepts">
+    Learn the business logic for tenant isolation, raw-first ingestion, lifecycle, and audit.
+  </Card>
+  <Card title="Service architecture" icon="server" href="/app/observation/service-architecture">
+    See how the app server authenticates, stores, normalizes, and audits Observation data.
+  </Card>
+</CardGroup>
+
 ## Account and system roles
 
 OpenMIA Auth handles identity. OpenMIA App controls local application roles.

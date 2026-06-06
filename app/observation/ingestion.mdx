@@ -5,6 +5,15 @@ description: "Send runtime evidence into OpenMIA with uploads, webhooks, telemet
 
 Observation is raw-first: OpenMIA saves the raw payload, creates an import job, then writes normalized traces and spans.
 
+<CardGroup cols={2}>
+  <Card title="Runtime JSON v1 contract" icon="code" href="/app/observation/runtime-json-v1">
+    Build SDK and webhooker payloads that map cleanly into traces and spans.
+  </Card>
+  <Card title="OpenMIA Webhooker SDK" icon="terminal" href="/app/observation/sdk-webhooker">
+    Deploy Codex and Claude Code capture through the Custom JSON endpoint.
+  </Card>
+</CardGroup>
+
 ## Choose an ingestion method
 
 <Tabs>
@@ -43,7 +52,7 @@ Observation is raw-first: OpenMIA saves the raw payload, creates an import job, 
     ```
   </Tab>
   <Tab title="Runtime JSON v1">
-    OpenMIA Webhooker SDKs can send Runtime JSON v1 through the same Custom JSON endpoint.
+    OpenMIA Webhooker SDKs can send Runtime JSON v1 through the same Custom JSON endpoint. See the full [Runtime JSON v1 contract](/app/observation/runtime-json-v1).
 
     ```json
     {
@@ -146,3 +155,9 @@ After ingestion, check:
 - **Raw Payloads** for hash, size, source, and related traces.
 - **Traces** for normalized runtime behavior.
 - **Audit** for key operational events.
+
+## Developer references
+
+- Use [Observation API reference](/app/observation/api-reference) for endpoint details.
+- Use [Developer concepts](/app/observation/developer-concepts) for the business logic behind raw-first ingestion and append.
+- Use [Service architecture](/app/observation/service-architecture) for how the app server normalizes and writes data.
