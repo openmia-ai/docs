@@ -28,7 +28,12 @@
           "app/observation/raw-payloads-import-jobs",
           "app/observation/feedback-audit",
           "app/observation/security-permissions",
-          "app/observation/troubleshooting"
+          "app/observation/troubleshooting",
+          "app/observation/developer-concepts",
+          "app/observation/runtime-json-v1",
+          "app/observation/api-reference",
+          "app/observation/sdk-webhooker",
+          "app/observation/service-architecture"
         ]
       }
     ],

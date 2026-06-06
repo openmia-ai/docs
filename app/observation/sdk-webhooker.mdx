@@ -1,0 +1,583 @@
+---
+title: "OpenMIA Webhooker SDK"
+description: "Deploy OpenMIA Webhooker for Codex hooks and Claude Code events."
+---
+
+OpenMIA Webhooker is the SDK-side semantic adapter for local agent tools. It converts Codex hook events and Claude Code local events into OpenMIA Runtime JSON v1, then uploads them through the existing Custom JSON webhook.
+
+<Info>
+  The SDK understands local tool semantics. The OpenMIA App server stores the raw payload first, enforces Project and integration scope, and writes normalized Observation records.
+</Info>
+
+## Architecture
+
+```text
+Codex hooks
+  -> openmia-webhooker codex
+  -> openmia_webhooker.adapters.codex
+  -> OpenMIA Runtime JSON v1
+  -> OpenMIA custom_json endpoint
+```
+
+For Claude Code:
+
+```text
+Claude Code stream JSON or local JSONL
+  -> openmia-webhooker claude-code
+  -> openmia_webhooker.adapters.claude_code
+  -> OpenMIA Runtime JSON v1
+  -> OpenMIA custom_json endpoint
+```
+
+OpenMIA Webhooker is responsible for:
+
+- reading Codex hook stdin payloads
+- recognizing `UserPromptSubmit`, `Stop`, `PreToolUse`, and `PostToolUse`
+- reading Claude Code `stream-json` and local JSONL events
+- mapping one local session to one stable OpenMIA trace
+- appending each user round as a top-level `chat` span
+- attaching tool spans to the relevant chat span
+- deciding whether to upload full text or length/hash summaries
+- keeping local state so repeated scans do not duplicate already uploaded rounds
+- uploading Runtime JSON v1 to the Custom JSON endpoint
+
+OpenMIA Webhooker does not send an empty round span or a separate session summary workflow span.
+
+## Prerequisites
+
+You need:
+
+- Python 3.10 or later
+- `pip`
+- Codex or Claude Code installed, depending on what you want to capture
+- an OpenMIA Custom JSON integration
+- the integration ingest key
+- network access to `https://app.openmia.ai`
+
+Check Python and pip:
+
+<Tabs>
+  <Tab title="Linux/macOS">
+    ```bash
+    python3 --version
+    python3 -m pip --version
+    ```
+  </Tab>
+  <Tab title="Windows PowerShell">
+    ```powershell
+    py --version
+    py -m pip --version
+    ```
+  </Tab>
+</Tabs>
+
+## Install OpenMIA Webhooker
+
+<Tabs>
+  <Tab title="Linux/macOS user install">
+    ```bash
+    python3 -m pip install --user openmia-webhooker
+    ```
+  </Tab>
+  <Tab title="Linux/macOS virtualenv">
+    ```bash
+    python3 -m venv ~/.venvs/openmia
+    source ~/.venvs/openmia/bin/activate
+    python3 -m pip install openmia-webhooker
+    ```
+  </Tab>
+  <Tab title="Windows user install">
+    ```powershell
+    py -m pip install --user openmia-webhooker
+    ```
+  </Tab>
+  <Tab title="Windows virtualenv">
+    ```powershell
+    py -m venv $HOME\.venvs\openmia
+    & $HOME\.venvs\openmia\Scripts\Activate.ps1
+    py -m pip install openmia-webhooker
+    ```
+  </Tab>
+</Tabs>
+
+Confirm the CLI works:
+
+```bash
+openmia-webhooker --help
+```
+
+If the command is not found, use an absolute path in your hook configuration or add the user-level Python scripts directory to `PATH`.
+
+Linux/macOS user install paths often use:
+
+```text
+~/.local/bin
+```
+
+You can inspect the user base:
+
+```bash
+python3 -m site --user-base
+```
+
+## Configure OpenMIA credentials
+
+Create the local directory:
+
+<Tabs>
+  <Tab title="Linux/macOS">
+    ```bash
+    mkdir -p ~/.codex/openmia-custom-json/state
+    ```
+  </Tab>
+  <Tab title="Windows PowerShell">
+    ```powershell
+    New-Item -ItemType Directory -Force "$HOME\.codex\openmia-custom-json\state" | Out-Null
+    ```
+  </Tab>
+</Tabs>
+
+Create `~/.codex/openmia-custom-json.env`:
+
+```bash
+OPENMIA_CUSTOM_JSON_ENDPOINT=https://app.openmia.ai/api/observation/webhooks/custom_json?payload_type=json
+OPENMIA_CUSTOM_JSON_INGEST_KEY=<your_openmia_ingest_key>
+OPENMIA_CAPTURE_TEXT=false
+```
+
+Windows PowerShell:
+
+```powershell
+@"
+OPENMIA_CUSTOM_JSON_ENDPOINT=https://app.openmia.ai/api/observation/webhooks/custom_json?payload_type=json
+OPENMIA_CUSTOM_JSON_INGEST_KEY=<your_openmia_ingest_key>
+OPENMIA_CAPTURE_TEXT=false
+"@ | Set-Content -Encoding utf8 "$HOME\.codex\openmia-custom-json.env"
+```
+
+Field meanings:
+
+| Variable | Meaning |
+| --- | --- |
+| `OPENMIA_CUSTOM_JSON_ENDPOINT` | Custom JSON webhook endpoint. |
+| `OPENMIA_CUSTOM_JSON_INGEST_KEY` | Integration ingest key. Do not commit it. |
+| `OPENMIA_CAPTURE_TEXT` | Whether to upload prompt, tool input/output, and assistant output text. |
+
+Recommended production default:
+
+```bash
+OPENMIA_CAPTURE_TEXT=false
+```
+
+With this setting, the SDK sends length and SHA-256 summaries instead of full text. Use `true` only when your privacy policy allows uploading prompt and tool content.
+
+Restrict env file permissions on Linux/macOS:
+
+```bash
+chmod 600 ~/.codex/openmia-custom-json.env
+```
+
+## Path resolution
+
+OpenMIA Webhooker resolves its base directory in this order:
+
+1. explicit `base_dir` passed by code
+2. `OPENMIA_HOME`
+3. compatibility variable `CODEX_HOME`
+4. default `~/.codex`
+
+Advanced override variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `OPENMIA_CUSTOM_JSON_ENV_FILE` | Full path to the env file. |
+| `OPENMIA_STATE_DIR` | Full path to the state directory. |
+| `OPENMIA_LOG_PATH` | Full path to the collector log. |
+| `OPENMIA_CLAUDE_COMMAND` | Custom Claude executable path. |
+| `OPENMIA_CLAUDE_PROJECTS_DIR` | Custom Claude projects directory. |
+
+Example:
+
+```bash
+export OPENMIA_HOME="$HOME/.codex"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:OPENMIA_HOME = "$HOME\.codex"
+```
+
+## Enable Codex hooks
+
+Merge this into `~/.codex/config.toml`. If a matching hook block already exists, keep only one copy.
+
+```toml
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "openmia-webhooker codex user_prompt_submit"
+timeout = 15
+statusMessage = "Sending OpenMIA custom telemetry"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "openmia-webhooker codex stop"
+timeout = 20
+statusMessage = "Finalizing OpenMIA custom telemetry"
+
+[[hooks.PreToolUse]]
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "openmia-webhooker codex pre_tool_use"
+timeout = 15
+statusMessage = "Sending OpenMIA tool telemetry"
+
+[[hooks.PostToolUse]]
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "openmia-webhooker codex post_tool_use"
+timeout = 20
+statusMessage = "Sending OpenMIA tool result telemetry"
+```
+
+If Codex cannot find `openmia-webhooker`, use an absolute path.
+
+Linux/macOS user install:
+
+```toml
+command = "/home/you/.local/bin/openmia-webhooker codex user_prompt_submit"
+```
+
+Linux/macOS virtualenv:
+
+```toml
+command = "/home/you/.venvs/openmia/bin/openmia-webhooker codex user_prompt_submit"
+```
+
+Windows user install:
+
+```toml
+command = "C:\\Users\\you\\AppData\\Roaming\\Python\\Python313\\Scripts\\openmia-webhooker.exe codex user_prompt_submit"
+```
+
+Windows virtualenv:
+
+```toml
+command = "C:\\Users\\you\\.venvs\\openmia\\Scripts\\openmia-webhooker.exe codex user_prompt_submit"
+```
+
+## Local dry-run checks
+
+Dry-run prints the Runtime JSON payload without uploading it.
+
+```bash
+openmia-webhooker codex self_test --dry-run
+```
+
+Simulate a user prompt:
+
+```bash
+printf '{"conversation_id":"deploy_test","prompt":"hello from dry run"}' \
+  | openmia-webhooker codex user_prompt_submit --dry-run
+```
+
+Simulate a tool start:
+
+```bash
+printf '{"conversation_id":"deploy_test","tool_call_id":"call-1","tool_name":"exec_command","cmd":"python3 --version"}' \
+  | openmia-webhooker codex pre_tool_use --dry-run
+```
+
+Simulate a tool result:
+
+```bash
+printf '{"conversation_id":"deploy_test","tool_call_id":"call-1","tool_name":"exec_command","stdout":"Python 3.x"}' \
+  | openmia-webhooker codex post_tool_use --dry-run
+```
+
+Simulate a stop event:
+
+```bash
+printf '{"conversation_id":"deploy_test","output":"completed"}' \
+  | openmia-webhooker codex stop --dry-run
+```
+
+If these commands print JSON, CLI loading, configuration, and state writes are basically healthy.
+
+## Real upload check
+
+Run:
+
+```bash
+openmia-webhooker codex self_test
+```
+
+Then inspect logs:
+
+```bash
+tail -n 20 ~/.codex/openmia-custom-json/collector.log
+```
+
+Success should show a line similar to:
+
+```text
+"message": "uploaded status 200"
+"success": true
+```
+
+Then open OpenMIA and search recent traces for `Codex custom JSON collector self-test` or `Codex session`.
+
+## Make Codex reload hooks
+
+After changing `config.toml`:
+
+1. Close the current Codex or IDE session.
+2. Reopen Codex.
+3. Send a short message.
+4. Ask Codex to run a small tool call, such as `python3 --version`.
+5. Check `~/.codex/openmia-custom-json/collector.log` for a new `uploaded status 200` line.
+
+Some Codex environments ask you to trust a hook command the first time it runs. Confirm the command path and source before trusting it.
+
+## Claude Code support
+
+OpenMIA Webhooker supports three Claude Code entry points. All of them emit Runtime JSON v1 and reuse the Custom JSON endpoint.
+
+### stdin adapter
+
+Use this for pipelines, CI, and debugging. It reads Claude Code `stream-json` from stdin.
+
+```bash
+claude -p "hello" --verbose --output-format stream-json --include-hook-events \
+  | openmia-webhooker claude-code
+```
+
+Dry-run:
+
+```bash
+printf '{"type":"system","subtype":"init","session_id":"claude-test"}\n' \
+  | openmia-webhooker claude-code --dry-run
+```
+
+### Non-interactive wrapper
+
+Use this when you do not want to manually add Claude Code stream options. It supports `--print` or `-p` non-interactive mode.
+
+```bash
+openmia-webhooker claude-code-run -- -p "hello"
+```
+
+The wrapper appends:
+
+```text
+--verbose --output-format stream-json --include-hook-events
+```
+
+After upload, the wrapper prints Claude Code final result text to stdout. With `--dry-run`, it prints the OpenMIA payload and does not upload.
+
+```bash
+openmia-webhooker claude-code-run --dry-run -- -p "hello"
+```
+
+### Local JSONL watcher
+
+Use this when existing Claude Code calls are not wrapped by `claude-code-run`.
+
+Default source:
+
+```text
+~/.claude/projects/**/*.jsonl
+```
+
+One-time scan:
+
+```bash
+openmia-webhooker claude-code-watch --once
+```
+
+Follow mode:
+
+```bash
+openmia-webhooker claude-code-watch --follow
+```
+
+Follow mode waits for a round to be idle before upload. This avoids uploading incomplete assistant or tool events too early.
+
+Status display modes:
+
+```bash
+openmia-webhooker claude-code-watch --follow --status-style auto
+openmia-webhooker claude-code-watch --follow --status-style inline
+openmia-webhooker claude-code-watch --follow --status-style line
+openmia-webhooker claude-code-watch --follow --status-style off
+```
+
+Disable status output:
+
+```bash
+openmia-webhooker claude-code-watch --follow --no-status
+```
+
+Custom projects directory:
+
+```bash
+openmia-webhooker claude-code-watch --once --projects-dir /path/to/.claude/projects
+```
+
+Windows PowerShell:
+
+```powershell
+openmia-webhooker claude-code-watch --once --projects-dir "$HOME\.claude\projects"
+```
+
+The watcher starts a new round only on real user prompt lines. Some Claude Code JSONL `type=user` lines are tool results; the SDK keeps those in the current round. Uploaded rounds are tracked in local state so repeated `--once` runs do not upload duplicates.
+
+## Custom Claude command
+
+If the Claude executable is not named `claude`, pass it directly:
+
+```bash
+openmia-webhooker claude-code-run --claude-command /path/to/claude -- -p "hello"
+```
+
+Windows PowerShell:
+
+```powershell
+openmia-webhooker claude-code-run --claude-command "C:\Path\To\claude.cmd" -- -p "hello"
+```
+
+Or use environment variables:
+
+```bash
+export OPENMIA_CLAUDE_COMMAND="/path/to/claude"
+export OPENMIA_CLAUDE_PROJECTS_DIR="$HOME/.claude/projects"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:OPENMIA_CLAUDE_COMMAND = "C:\Path\To\claude.cmd"
+$env:OPENMIA_CLAUDE_PROJECTS_DIR = "$HOME\.claude\projects"
+```
+
+## Diagnostics
+
+Run local diagnostics first. This does not upload, does not write state, and does not print the ingest key.
+
+```bash
+openmia-webhooker doctor
+openmia-webhooker doctor --json
+```
+
+Inspect recent logs:
+
+```bash
+tail -n 50 ~/.codex/openmia-custom-json/collector.log
+```
+
+Common issues:
+
+| Symptom | Fix |
+| --- | --- |
+| `openmia-webhooker: command not found` | Use an absolute path or add the Python scripts directory to `PATH`. |
+| `OPENMIA_CUSTOM_JSON_INGEST_KEY missing` | Check the env file path and key value. |
+| Claude command not found | Use `--claude-command` or `OPENMIA_CLAUDE_COMMAND`. |
+| `http_error` | Check endpoint, ingest key, source type, and integration status. |
+| `upload_failed` | Check DNS, TLS, network access, and OpenMIA service health. |
+| `state_write_failed` | Make the state directory writable, or use `OPENMIA_STATE_DIR`. |
+| Logs show 200 but no trace appears | Check Project Scope, time filters, Raw Payloads, and Import Jobs. |
+| Claude Code calls do not automatically trace | Use `claude-code-run` or run `claude-code-watch --follow`. |
+
+Repair local permissions on Linux/macOS:
+
+```bash
+mkdir -p ~/.codex/openmia-custom-json/state
+chmod 700 ~/.codex/openmia-custom-json
+chmod 700 ~/.codex/openmia-custom-json/state
+chmod 600 ~/.codex/openmia-custom-json.env
+```
+
+Windows usually does not need `chmod`. If permissions fail, ensure the current user can read and write `$HOME\.codex\openmia-custom-json`, or point `OPENMIA_HOME`, `OPENMIA_STATE_DIR`, and `OPENMIA_LOG_PATH` to writable locations.
+
+## Privacy and security
+
+- Do not commit `~/.codex/openmia-custom-json.env`.
+- Do not paste ingest keys into issues, logs, screenshots, or chat messages.
+- Rotate the key in OpenMIA if it was exposed.
+- Start production deployments with `OPENMIA_CAPTURE_TEXT=false`.
+- Use `OPENMIA_CAPTURE_TEXT=true` only after your team approves collecting prompt, tool input/output, and response text.
+- OpenMIA Webhooker redacts common sensitive fields, but your team is still responsible for deciding what business data may be uploaded.
+- Codex hidden reasoning is not exposed by hooks. The SDK can report a reasoning placeholder span, but it cannot upload hidden reasoning text.
+
+## Upgrade OpenMIA Webhooker
+
+User install:
+
+```bash
+python3 -m pip install --user --upgrade openmia-webhooker
+```
+
+Virtualenv:
+
+```bash
+source ~/.venvs/openmia/bin/activate
+python3 -m pip install --upgrade openmia-webhooker
+```
+
+Verify after upgrade:
+
+```bash
+openmia-webhooker --help
+openmia-webhooker doctor
+openmia-webhooker codex self_test --dry-run
+openmia-webhooker claude-code-watch --once --dry-run
+openmia-webhooker codex self_test
+```
+
+Restart Codex after upgrading.
+
+## Move to a new machine
+
+On a new machine:
+
+<Steps>
+  <Step title="Install the package">
+    ```bash
+    python3 -m pip install --user openmia-webhooker
+    ```
+  </Step>
+  <Step title="Create the env file">
+    Create `~/.codex/openmia-custom-json.env` with endpoint, ingest key, and capture setting.
+  </Step>
+  <Step title="Add Codex hooks">
+    Add the four hook blocks to `~/.codex/config.toml`.
+  </Step>
+  <Step title="Run dry-run and self-test">
+    Verify local JSON output first, then run a real `self_test`.
+  </Step>
+  <Step title="Restart Codex">
+    Start a new Codex session so hook configuration is loaded.
+  </Step>
+</Steps>
+
+Usually, do not copy old `state/*.json` files unless you intentionally want to keep old local session mappings.
+
+## Quick checklist
+
+- `python3 --version` works.
+- `python3 -m pip --version` works.
+- `python3 -m pip show openmia-webhooker` shows the package.
+- `openmia-webhooker --help` works.
+- `openmia-webhooker doctor` shows env, state, and log paths without printing the ingest key.
+- `~/.codex/openmia-custom-json.env` exists and is private.
+- `~/.codex/config.toml` contains the four Codex hook commands.
+- `openmia-webhooker codex self_test --dry-run` prints JSON.
+- Claude commands or watcher commands work if you need Claude Code capture.
+- `openmia-webhooker codex self_test` uploads successfully.
+- After restarting Codex, real conversation events appear in OpenMIA.
+
+## Source repository
+
+The SDK source lives at [openmia-ai/openmia-webhooker](https://github.com/openmia-ai/openmia-webhooker).

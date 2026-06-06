@@ -1,0 +1,161 @@
+---
+title: "Developer concepts"
+description: "Understand the business logic behind OpenMIA Observation before building integrations."
+---
+
+This page explains the core concepts behind Observation from a developer point of view. Read it before writing an SDK, webhooker, proxy, or importer.
+
+## Responsibility split
+
+OpenMIA intentionally separates source semantics from server normalization.
+
+| Layer | Responsibility |
+| --- | --- |
+| SDK or webhooker | Understand source-specific events, such as Codex hooks or Claude Code stream JSON, and emit OpenMIA Runtime JSON v1. |
+| OpenMIA App server | Save the raw payload first, verify tenant and integration scope, normalize standard fields, write traces and spans, and record import/audit history. |
+| UI | Present Projects, Integrations, traces, raw payloads, import jobs, feedback, and audit history in a consistent workflow. |
+
+<Info>
+  New SDKs should emit Runtime JSON v1 instead of requiring the app server to learn every source-specific event format.
+</Info>
+
+## Tenant model
+
+A Project is the tenant boundary. Every integration, raw payload, import job, trace, span, feedback item, audit event, and export job belongs to one Project.
+
+Authorization is always checked with Project IDs and Project roles. Project names and Project codes are display identifiers, not authorization inputs.
+
+## Project Scope
+
+User pages use Project Scope from the URL:
+
+```text
+?projectIds=p1,p2
+```
+
+The Project Scope affects lists, filters, grouped tables, and bulk actions. Server-side APIs still re-check each Project ID against the current user.
+
+## Roles
+
+Observation uses two role layers.
+
+| Role layer | Examples | Used for |
+| --- | --- | --- |
+| System role | `user`, `admin`, `super_admin` | Admin console and global operations. |
+| Project role | `viewer`, `editor`, `admin`, `owner` | Project data access and Project operations. |
+
+Project role summary:
+
+- `viewer` can read active Project data.
+- `editor` can import data and create feedback.
+- `admin` can manage integrations, members, lifecycle actions, and migrations.
+- `owner` has full Project administration.
+
+## Integration channels
+
+An integration is a data channel scoped to one Project. It owns:
+
+- source system, such as `custom_json`, `openmia_proxy`, or `codex_cli`
+- sync mode, such as manual import, webhook, telemetry push, or proxy
+- one-time plaintext ingest key
+- stored ingest key hash and prefix
+- health fields and availability status
+- optional write-only upstream secrets for proxy integrations
+
+An ingest key can only write through the integration it belongs to.
+
+## Raw-first ingestion
+
+Every external write follows the same pattern:
+
+<Steps>
+  <Step title="Authenticate the integration">
+    The request must include an integration ingest key, normally with `Authorization: Bearer omia_ing_xxx`.
+  </Step>
+  <Step title="Save the raw payload">
+    OpenMIA writes source data before normalization so the normalized result can be audited later.
+  </Step>
+  <Step title="Create an import job">
+    The job records trigger, status, payload type, counts, skipped records, and errors.
+  </Step>
+  <Step title="Normalize traces and spans">
+    The matching adaptor converts the raw payload into standard Observation records.
+  </Step>
+  <Step title="Update health and audit">
+    Integration health, import job status, and audit events are updated after the write.
+  </Step>
+</Steps>
+
+## Trace and span model
+
+A trace is the main runtime record. A span is a step inside the trace.
+
+Traces hold:
+
+- external trace ID
+- optional session ID
+- Project and integration
+- source system
+- status, time bounds, and latency
+- input, output, and metadata
+- normalized spans
+
+Spans hold:
+
+- external span ID
+- optional parent external span ID
+- span type
+- status, time bounds, and latency
+- input, output, metadata, model, usage, cost, and error
+
+## Append and idempotency
+
+OpenMIA supports append-style ingestion. If a payload uses the same external trace ID for the same Project, integration, and source, OpenMIA reuses the trace and inserts only new spans.
+
+Idempotency rules:
+
+- Exact duplicate raw payloads are skipped at payload level.
+- Duplicate spans are skipped by trace, source system, and external span ID.
+- Trace time bounds can expand.
+- Trace output can update when a later payload provides a newer output.
+- Trace name and input are conservative and are not overwritten by ordinary appends.
+
+## Editable windows
+
+Trace append and destructive span edits use the trace editable window.
+
+- Locked trace: copy is allowed, move and delete are blocked.
+- Editable trace: Project `admin` or `owner` can move or soft-delete spans.
+
+The append idle window is controlled by the app configuration. Project `admin` and `owner` users can unlock a trace from the trace detail page.
+
+## Lifecycle actions
+
+User delete actions are soft delete.
+
+| Action | Meaning |
+| --- | --- |
+| Delete | Set delete metadata and hide from active lists. |
+| Restore | Clear delete metadata when the restore is safe. |
+| Permanent Delete in user UI | User-side permanent hide for Projects. This is not a physical database purge. |
+| Migrate | Move or clone normalized data into another Project with provenance mapping. |
+| Rollback | Create a new rollback operation that reverses a supported prior operation after conflict checks. |
+
+## Audit
+
+Observation records operation history for project operations, integration changes, proxy writes, exports, trace operations, span operations, migration, and rollback.
+
+Audit is append-only. Rollback does not edit the original operation. It creates another operation that references the original event.
+
+## Integration design rule
+
+When adding a new local agent or runtime source:
+
+1. Put source-specific parsing in the SDK or webhooker.
+2. Emit Runtime JSON v1.
+3. Send the payload to the Custom JSON webhook.
+4. Let the OpenMIA server handle raw-first storage, authorization, idempotency, normalization, and audit.
+
+<Tip>
+  Use [Runtime JSON v1](/app/observation/runtime-json-v1) as the contract between source-specific SDKs and OpenMIA App.
+</Tip>

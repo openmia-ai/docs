@@ -5,6 +5,10 @@ description: "Fix common Observation setup, ingestion, trace, and permission iss
 
 Use this page when data does not appear where you expect it.
 
+<Tip>
+  If you are deploying Codex or Claude Code capture, keep the [OpenMIA Webhooker SDK guide](/app/observation/sdk-webhooker) open while troubleshooting.
+</Tip>
+
 ## No Project is selected
 
 Many Observation pages show an empty state when Project Scope is empty.
@@ -32,6 +36,12 @@ Fix:
 3. Check **Channel availability** and **Health**.
 4. Rotate the key if needed.
 5. Use **View related Audit** to inspect recent events.
+
+For SDK deployments, also run:
+
+```bash
+openmia-webhooker doctor --json
+```
 
 ## Import succeeded but no trace appears
 
@@ -98,3 +108,15 @@ Fix:
 ## You cannot see Audit
 
 Audit is available only for Projects where you have `admin` or `owner` role. Viewer and editor users can use trace and feedback views, but they cannot inspect Project operation history.
+
+## Runtime JSON does not normalize as expected
+
+Check these fields first:
+
+- `schemaVersion` must be `openmia.runtime.v1`.
+- `trace.id` must be stable for one local session.
+- each span needs a stable `id`.
+- tool spans should use `parentId` to attach to the relevant chat span.
+- use `roundId` to group one user turn.
+
+See [Runtime JSON v1](/app/observation/runtime-json-v1) for examples.
