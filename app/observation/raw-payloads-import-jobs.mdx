@@ -1,0 +1,88 @@
+---
+title: "Raw Payloads and Import Jobs"
+description: "Understand raw-first ingestion, import job status, ZIP exports, and source evidence."
+---
+
+OpenMIA stores raw payloads before it normalizes traces. This keeps a source record for audit, debugging, and export.
+
+## Raw Payloads
+
+Open **Raw Payloads** to inspect payload metadata:
+
+- Project
+- integration
+- source system
+- payload type
+- content hash
+- size
+- received time
+- related import jobs
+- related traces
+
+<Warning>
+  Raw payload original content is not previewed inline. Project `admin` and `owner` users can prepare audited ZIP downloads.
+</Warning>
+
+## Import Jobs
+
+An Import Job records one normalization attempt.
+
+Import jobs show:
+
+- trigger, such as file upload, webhook, OTLP HTTP, sync check, migration, or span copy
+- status
+- payload type and source
+- created, merged, skipped, and error counts
+- related raw payload
+- related traces
+
+Use Import Jobs when a payload arrived but the trace view does not look right.
+
+## Prepare ZIP downloads
+
+Project `admin` and `owner` users can prepare ZIP downloads from Raw Payloads.
+
+<Steps>
+  <Step title="Select raw payloads">
+    Select rows in the Raw Payloads table, or use **Select all results** for the current filtered set.
+  </Step>
+  <Step title="Prepare ZIP">
+    Click **Prepare ZIP**. OpenMIA creates an export job.
+  </Step>
+  <Step title="Wait for progress">
+    The drawer shows queued, running, succeeded, failed, or expired status.
+  </Step>
+  <Step title="Download before expiration">
+    Download the ZIP while the link is still valid.
+  </Step>
+</Steps>
+
+ZIP files include:
+
+- `manifest.json`
+- one folder per raw payload
+- `payload.*` for the raw object
+- `metadata.json` for payload metadata
+
+The manifest records the Project, integration, hash, size, related traces, related import jobs, and ZIP paths.
+
+## Expiration and audit
+
+ZIP links expire, typically after 24 hours. After expiration:
+
+- the ZIP file is removed
+- the download link disappears from active UI
+- Audit still shows which payloads were included
+- old download links return an expired-file message
+
+## Delete and restore
+
+Deleting raw payloads and import jobs is provenance-aware.
+
+- Deleting a first raw payload can hide the trace bundle it created.
+- Deleting an append raw payload can hide only the spans it contributed.
+- Restore uses the original delete batch where possible.
+
+<Info>
+  OpenMIA uses soft delete for recovery and audit. It does not physically delete rows through the user interface.
+</Info>

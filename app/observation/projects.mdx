@@ -1,0 +1,79 @@
+---
+title: "Projects and Project Scope"
+description: "Create Projects, manage members, and control which tenant data each page shows."
+---
+
+A Project is the main tenant boundary in OpenMIA Observation. Integrations, raw payloads, import jobs, traces, spans, feedback, exports, and audit events all belong to a Project.
+
+## When to create a Project
+
+Create separate Projects for boundaries that should not share data by default:
+
+- production and staging environments
+- different products or applications
+- different customers or internal teams
+- experiments that need separate imports, traces, and audit history
+
+Each Project has:
+
+- a human-readable name
+- an immutable Project code such as `proj_ab12cd34`
+- a database ID used internally for authorization
+- members with Project roles
+
+## Create a Project
+
+<Steps>
+  <Step title="Open Projects">
+    Go to **Observation** then **Projects**.
+  </Step>
+  <Step title="Open the create drawer">
+    Click **Create**.
+  </Step>
+  <Step title="Enter details">
+    Add a Project name and optional description.
+  </Step>
+  <Step title="Add members">
+    Add registered OpenMIA users by email and assign a role.
+  </Step>
+  <Step title="Finish">
+    Save the Project, then select it from the Project Scope selector.
+  </Step>
+</Steps>
+
+<Info>
+  Project names must be unique for the same owner while active. A deleted Project does not block creating a new active Project with the same name.
+</Info>
+
+## Project Scope selector
+
+Use the Project selector in the page header to control what each module shows.
+
+- Select one Project for focused work.
+- Select multiple Projects for grouped lists.
+- Clear selection when you want the page to show the No Project state.
+
+When Project Scope changes, Observation keeps the selection in the URL with `projectIds`.
+
+## Project roles
+
+Project roles control what each member can do.
+
+| Role | Best for | Capabilities |
+| --- | --- | --- |
+| `viewer` | Readers and reviewers | View Projects, traces, spans, metadata, and feedback. |
+| `editor` | People adding runtime data | Upload/import data and create feedback. |
+| `admin` | Project operators | Manage integrations, members, delete/restore data, migrate data when also admin on the target Project. |
+| `owner` | Project owners | Full Project administration. |
+
+## Delete, restore, and permanent hide
+
+Project deletion is a soft delete. Deleted Projects can appear in the **Deleted Projects** table for users with enough permission.
+
+- **Delete** hides the Project from active lists.
+- **Restore** returns it to active lists if no active name conflict exists.
+- **Permanent Delete** in the user interface means user-side permanent hide, not physical deletion. Admin audit can still see the record.
+
+<Warning>
+  Soft delete is not data erasure. It is an audit and recovery workflow.
+</Warning>

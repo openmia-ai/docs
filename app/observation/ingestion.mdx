@@ -1,0 +1,148 @@
+---
+title: "Ingestion"
+description: "Send runtime evidence into OpenMIA with uploads, webhooks, telemetry, SDK payloads, and AI Proxy."
+---
+
+Observation is raw-first: OpenMIA saves the raw payload, creates an import job, then writes normalized traces and spans.
+
+## Choose an ingestion method
+
+<Tabs>
+  <Tab title="AI Proxy">
+    Use the OpenMIA AI Proxy when you want full observable evidence from OpenAI-compatible chat completions.
+
+    The canonical endpoint is:
+
+    ```text
+    https://app.openmia.ai/api/observation/proxy/openai/v1/chat/completions
+    ```
+
+    Example:
+
+    ```bash
+    curl -X POST "https://app.openmia.ai/api/observation/proxy/openai/v1/chat/completions" \
+      -H "Authorization: Bearer omia_ing_xxx" \
+      -H "Content-Type: application/json" \
+      --data '{
+        "model": "gpt-4.1",
+        "messages": [
+          { "role": "system", "content": "You are concise." },
+          { "role": "user", "content": "Explain OpenMIA Observation." }
+        ]
+      }'
+    ```
+  </Tab>
+  <Tab title="Custom JSON">
+    Use Custom JSON when your app, SDK, or webhooker can send normalized runtime data.
+
+    ```bash
+    curl -X POST "https://app.openmia.ai/api/observation/webhooks/custom_json?payload_type=json" \
+      -H "Authorization: Bearer omia_ing_xxx" \
+      -H "Content-Type: application/json" \
+      --data @trace.json
+    ```
+  </Tab>
+  <Tab title="Runtime JSON v1">
+    OpenMIA Webhooker SDKs can send Runtime JSON v1 through the same Custom JSON endpoint.
+
+    ```json
+    {
+      "schemaVersion": "openmia.runtime.v1",
+      "source": {
+        "type": "codex",
+        "adapter": "codex_hooks"
+      },
+      "session": {
+        "id": "local_session_001"
+      },
+      "trace": {
+        "id": "trace_001",
+        "name": "Codex session"
+      },
+      "spans": [
+        {
+          "id": "turn_1_chat",
+          "name": "Chat turn 1",
+          "type": "chat",
+          "input": { "text": "What changed?" }
+        }
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="OTLP">
+    Use OTLP JSON for OpenTelemetry traces.
+
+    ```bash
+    curl -X POST "https://app.openmia.ai/api/observation/otel/v1/traces" \
+      -H "Authorization: Bearer omia_ing_xxx" \
+      -H "Content-Type: application/json" \
+      --data @otlp-traces.json
+    ```
+  </Tab>
+  <Tab title="Codex CLI OTLP">
+    Use Codex CLI OTLP logs if you want Codex telemetry without a local webhooker.
+
+    ```toml
+    [otel]
+    environment = "prod"
+    log_user_prompt = false
+    exporter = { otlp-http = { endpoint = "https://app.openmia.ai/api/observation/codex/otel/v1/logs", protocol = "json", headers = { Authorization = "Bearer omia_ing_xxx" } } }
+    ```
+  </Tab>
+</Tabs>
+
+## Custom JSON trace shape
+
+```json
+{
+  "trace_id": "trace_001",
+  "name": "customer_support_agent",
+  "session_id": "session_001",
+  "status": "success",
+  "input": { "query": "hello" },
+  "output": { "answer": "hi" },
+  "spans": [
+    {
+      "span_id": "span_001",
+      "name": "agent_run",
+      "type": "agent"
+    },
+    {
+      "span_id": "span_002",
+      "parent_span_id": "span_001",
+      "name": "llm_call",
+      "type": "llm",
+      "model_provider": "openai",
+      "model_name": "gpt-4.1",
+      "usage": {
+        "prompt_tokens": 100,
+        "completion_tokens": 50,
+        "total_tokens": 150
+      }
+    }
+  ]
+}
+```
+
+## Append behavior
+
+If a payload uses an existing trace ID for the same Project and integration, OpenMIA reuses the trace and adds only new spans.
+
+- Duplicate spans are skipped.
+- Trace time bounds can expand.
+- Trace output can update when a later payload provides a newer output.
+- Raw payloads remain separately auditable.
+
+<Info>
+  Exact duplicate raw payloads are skipped at the payload level. Submit a new payload when you want to append new spans.
+</Info>
+
+## Common ingestion results
+
+After ingestion, check:
+
+- **Import Jobs** for status, counts, skipped records, and errors.
+- **Raw Payloads** for hash, size, source, and related traces.
+- **Traces** for normalized runtime behavior.
+- **Audit** for key operational events.

@@ -1,47 +1,89 @@
 ---
 title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+description: "Create your first Observation Project and inspect your first AI trace."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+This quickstart takes you from a new OpenMIA account to a visible trace in **Observation**.
 
 ## Prerequisites
 
-Before you begin, you must have:
+- Access to [app.openmia.ai](https://app.openmia.ai).
+- An OpenMIA Auth account.
+- Permission to create an Observation Project.
+- A small AI runtime payload, or an application that can call an OpenAI-compatible endpoint.
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+## Create your first Project
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
-
-    ```bash
-    npm install your-package
-    ```
+  <Step title="Open Observation">
+    Sign in to [app.openmia.ai](https://app.openmia.ai), then open **Observation**.
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
-
-    ```bash
-    your-cli init
-    ```
+  <Step title="Create a Project">
+    Go to **Projects**, click **Create**, enter a Project name, and finish the drawer.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+  <Step title="Select the Project">
+    Use the Project selector in the page header. Select the Project you just created.
+  </Step>
+</Steps>
+
+<Info>
+  Observation pages use the current Project Scope. If no Project is selected, most modules show an empty state so you can choose a Project first.
+</Info>
+
+## Connect data
+
+The fastest path is to create a **Custom JSON** integration and upload or POST one JSON trace.
+
+<Steps>
+  <Step title="Create an integration">
+    Open **Integrations**, click **Create**, choose **JSON / Webhook**, then choose **Custom JSON**.
+  </Step>
+  <Step title="Copy the ingest key">
+    The plaintext ingest key appears only once. Store it in a secure user-level or server-level secret store.
+  </Step>
+  <Step title="Send a trace">
+    Use the webhook endpoint with your integration key.
 
     ```bash
-    your-cli start
+    curl -X POST "https://app.openmia.ai/api/observation/webhooks/custom_json?payload_type=json" \
+      -H "Authorization: Bearer omia_ing_xxx" \
+      -H "Content-Type: application/json" \
+      --data '{
+        "trace_id": "quickstart_trace_001",
+        "name": "Quickstart agent run",
+        "status": "success",
+        "input": { "question": "What can OpenMIA show me?" },
+        "output": { "answer": "Trace, span, raw payload, and audit evidence." },
+        "spans": [
+          {
+            "span_id": "span_001",
+            "name": "Agent run",
+            "type": "agent",
+            "status": "success"
+          }
+        ]
+      }'
     ```
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Inspect the result
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+Open **Traces** and click your trace. You should see:
+
+- trace metadata and status
+- the span tree
+- input and output
+- related raw payload and import job metadata
+- feedback and audit actions, depending on your role
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Choose the right integration" icon="plug" href="/app/observation/integrations">
+    Compare AI Proxy, JSON/Webhook, Telemetry, and External Platform sources.
+  </Card>
+  <Card title="Read traces and spans" icon="timeline" href="/app/observation/traces">
+    Learn how trace detail, span tree, raw content, and edit mode work.
+  </Card>
+</CardGroup>

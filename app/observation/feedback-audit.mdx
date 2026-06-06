@@ -1,0 +1,86 @@
+---
+title: "Feedback and Audit"
+description: "Add human review and inspect Project-level operation history."
+---
+
+Feedback and Audit help teams close the loop after runtime data enters Observation.
+
+## Feedback
+
+Use Feedback to record human review on traces and spans.
+
+Feedback can include:
+
+- score
+- label
+- comment
+- type
+- author
+- target trace or span
+
+Use Feedback for review workflows such as:
+
+- marking useful or poor model answers
+- tagging hallucinations or tool failures
+- collecting evaluation candidates
+- attaching reviewer notes to a trace
+
+## Feedback permissions
+
+- `viewer` can read feedback.
+- `editor` can create feedback.
+- `admin` and `owner` can manage feedback lifecycle operations.
+
+## Audit
+
+Audit shows operation history for Projects where you have `admin` or `owner` role.
+
+Audit can include:
+
+- integration creation, update, error reset, and key rotation
+- proxy and ingestion events
+- raw payload export creation, completion, download, failure, and expiration
+- trace create, delete, restore, migration, span copy, span move, and span delete
+- rollback events
+
+## Filter Audit
+
+Use filters to narrow audit history by:
+
+- action
+- object type
+- actor
+- date range
+- rollbackable status
+- integration
+- search text
+
+Action labels use readable names and colors instead of raw enum names. Technical detail drawers still include raw action values for troubleshooting.
+
+## Rollback
+
+Some trace and span operations can be rolled back. Rollback appears only when:
+
+- the event supports rollback
+- the event has not already been rolled back
+- you still have the required Project permissions
+- rollback conflict checks pass
+
+<Warning>
+  Migration rollback requires admin or owner permission on both the source Project and target Project.
+</Warning>
+
+## Export audit
+
+Raw payload ZIP exports are fully audited.
+
+Audit detail can show:
+
+- who prepared the export
+- which payloads were included
+- total size
+- expiration time
+- who downloaded the ZIP
+- whether the file has expired
+
+Audit keeps the manifest snapshot after the ZIP file expires.
