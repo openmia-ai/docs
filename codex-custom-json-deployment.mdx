@@ -1,0 +1,279 @@
+---
+title: "Codex Custom JSON Collector"
+sidebarTitle: "Codex Collector"
+description: "Deploy hooks that forward Codex prompts, stop events, and tool calls to the OpenMIA custom_json webhook."
+icon: "cloud-arrow-up"
+---
+
+This guide walks you through deploying the Codex → OpenMIA `custom_json` collector. Once deployed, Codex user prompts, stop events, and pre/post tool-call events are converted by hooks into JSON traces and uploaded to the OpenMIA `custom_json` webhook.
+
+## Architecture
+
+The implementation consists of the following files:
+
+| Path | Purpose |
+| --- | --- |
+| `.codex/hooks/openmia_custom_json_collector.py` | Hook entry script. Reads Codex hook stdin, redacts sensitive fields, assembles the trace, and uploads to OpenMIA. |
+| `.codex/openmia-custom-json.env` | OpenMIA endpoint, ingest key, and body-capture toggle. |
+| `.codex/config.toml` | Codex hook configuration for `UserPromptSubmit`, `Stop`, `PreToolUse`, and `PostToolUse` events. |
+| `.codex/openmia-custom-json/collector.log` | Upload log. |
+| `.codex/openmia-custom-json/state/*.json` | Session state files used to correlate chat turns and tool calls into a single trace. |
+
+<Note>
+  The script uses only the Python standard library — no third-party dependencies required.
+</Note>
+
+## Prerequisites
+
+The target machine needs:
+
+- Python 3.10 or later
+- Codex installed and running correctly
+- An OpenMIA `custom_json` ingestion endpoint
+- An OpenMIA `custom_json` ingest key
+- Network access to `https://app.openmia.ai`
+
+Verify Python:
+
+```bash
+python3 --version
+```
+
+## Deployment
+
+<Steps>
+  <Step title="Create directories">
+    This guide assumes the Codex home directory is `~/.codex`. Substitute your actual path if different.
+
+    ```bash
+    mkdir -p ~/.codex/hooks
+    mkdir -p ~/.codex/openmia-custom-json/state
+    ```
+  </Step>
+  <Step title="Install the collector script">
+    ```bash
+    cp /path/to/openmia_custom_json_collector.py ~/.codex/hooks/openmia_custom_json_collector.py
+    chmod +x ~/.codex/hooks/openmia_custom_json_collector.py
+    ```
+
+    <Tip>
+      If the script is already on the current machine, it is typically located at `/root/.codex/hooks/openmia_custom_json_collector.py`.
+    </Tip>
+  </Step>
+  <Step title="Configure environment variables">
+    Create `~/.codex/openmia-custom-json.env`:
+
+    ```bash
+    OPENMIA_CUSTOM_JSON_ENDPOINT=https://app.openmia.ai/api/observation/webhooks/custom_json?payload_type=json
+    OPENMIA_CUSTOM_JSON_INGEST_KEY=<your_openmia_ingest_key>
+    OPENMIA_CAPTURE_TEXT=false
+    ```
+
+    | Variable | Description |
+    | --- | --- |
+    | `OPENMIA_CUSTOM_JSON_ENDPOINT` | OpenMIA `custom_json` webhook URL. |
+    | `OPENMIA_CUSTOM_JSON_INGEST_KEY` | OpenMIA ingest key. **Never commit to Git.** |
+    | `OPENMIA_CAPTURE_TEXT` | Whether to upload plaintext of prompts, tool I/O, and assistant outputs. |
+
+    Restrict file permissions:
+
+    ```bash
+    chmod 600 ~/.codex/openmia-custom-json.env
+    ```
+
+    <Warning>
+      Use `OPENMIA_CAPTURE_TEXT=false` in production by default. OpenMIA will then only receive the length and SHA-256 hash of each body, not the body itself. Switch to `true` only after confirming your privacy policy allows it.
+    </Warning>
+  </Step>
+  <Step title="Enable Codex hooks">
+    Merge the configuration below into `~/.codex/config.toml`. If any of these hook blocks already exist, keep only a single copy.
+
+    ```toml
+    [[hooks.UserPromptSubmit]]
+    [[hooks.UserPromptSubmit.hooks]]
+    type = "command"
+    command = "/usr/bin/python3 /root/.codex/hooks/openmia_custom_json_collector.py user_prompt_submit"
+    timeout = 15
+    statusMessage = "Sending OpenMIA custom telemetry"
+    
+    [[hooks.Stop]]
+    [[hooks.Stop.hooks]]
+    type = "command"
+    command = "/usr/bin/python3 /root/.codex/hooks/openmia_custom_json_collector.py stop"
+    timeout = 20
+    statusMessage = "Finalizing OpenMIA custom telemetry"
+    
+    [[hooks.PreToolUse]]
+    [[hooks.PreToolUse.hooks]]
+    type = "command"
+    command = "/usr/bin/python3 /root/.codex/hooks/openmia_custom_json_collector.py pre_tool_use"
+    timeout = 15
+    statusMessage = "Sending OpenMIA tool telemetry"
+    
+    [[hooks.PostToolUse]]
+    [[hooks.PostToolUse.hooks]]
+    type = "command"
+    command = "/usr/bin/python3 /root/.codex/hooks/openmia_custom_json_collector.py post_tool_use"
+    timeout = 20
+    statusMessage = "Sending OpenMIA tool result telemetry"
+    ```
+
+    If your deployment path is not `/root/.codex`, update each `command` accordingly:
+
+    ```toml
+    command = "/usr/bin/python3 /home/ubuntu/.codex/hooks/openmia_custom_json_collector.py user_prompt_submit"
+    ```
+  </Step>
+</Steps>
+
+## Verification
+
+<Tabs>
+  <Tab title="Dry run">
+    Dry runs do not upload data — they only print the JSON that would be sent.
+
+    ```bash Self-test
+    python3 ~/.codex/hooks/openmia_custom_json_collector.py self_test --dry-run
+    ```
+
+    ```bash User prompt
+    printf '{"conversation_id":"deploy_test","prompt":"hello from dry run"}' \
+      | python3 ~/.codex/hooks/openmia_custom_json_collector.py user_prompt_submit --dry-run
+    ```
+
+    ```bash Pre tool use
+    printf '{"conversation_id":"deploy_test","tool_name":"exec_command","cmd":"python3 --version"}' \
+      | python3 ~/.codex/hooks/openmia_custom_json_collector.py pre_tool_use --dry-run
+    ```
+
+    ```bash Post tool use
+    printf '{"conversation_id":"deploy_test","tool_name":"exec_command","stdout":"Python 3.x"}' \
+      | python3 ~/.codex/hooks/openmia_custom_json_collector.py post_tool_use --dry-run
+    ```
+
+    ```bash Stop event
+    printf '{"conversation_id":"deploy_test","output":"completed"}' \
+      | python3 ~/.codex/hooks/openmia_custom_json_collector.py stop --dry-run
+    ```
+
+    If each command returns JSON, the script and local state writes are working.
+  </Tab>
+  <Tab title="Real upload">
+    Once the ingest key is configured, run the self-test upload:
+
+    ```bash
+    python3 ~/.codex/hooks/openmia_custom_json_collector.py self_test
+    ```
+
+    Check the log:
+
+    ```bash
+    tail -n 20 ~/.codex/openmia-custom-json/collector.log
+    ```
+
+    A successful run looks similar to:
+
+    ```text
+    "message": "uploaded status 200"
+    "success": true
+    ```
+
+    Then open the OpenMIA console and filter by recent time to find `Codex custom JSON collector self-test` or `Codex session`.
+  </Tab>
+</Tabs>
+
+## Activate Codex
+
+After updating `config.toml`:
+
+1. Close the current Codex/IDE session.
+2. Reopen Codex.
+3. Send a simple message.
+4. Have Codex run a small tool call, such as `python3 --version`.
+5. Check `collector.log` for a new `uploaded status 200` entry.
+
+<Note>
+  Some Codex environments prompt you to trust hook commands on first run. After verifying the command path and script contents, allow the hook.
+</Note>
+
+## Troubleshooting
+
+View recent logs:
+
+```bash
+tail -n 50 ~/.codex/openmia-custom-json/collector.log
+```
+
+<AccordionGroup>
+  <Accordion title="OPENMIA_CUSTOM_JSON_INGEST_KEY missing">
+    The `.env` file does not exist, the path is wrong, or the key is missing. Verify `~/.codex/openmia-custom-json.env` exists and contains a valid `OPENMIA_CUSTOM_JSON_INGEST_KEY`.
+  </Accordion>
+
+  <Accordion title="http_error">
+    The endpoint or ingest key is incorrect, or OpenMIA rejected the payload. Double-check the values in your env file.
+  </Accordion>
+
+  <Accordion title="upload_failed">
+    Network is unreachable, DNS or TLS issue, or OpenMIA is temporarily unavailable. Confirm the machine can reach `https://app.openmia.ai`.
+  </Accordion>
+
+  <Accordion title="state_write_failed">
+    The local state directory is not writable. Fix with:
+
+    ```bash
+    mkdir -p ~/.codex/openmia-custom-json/state
+    chmod 700 ~/.codex/openmia-custom-json
+    chmod 700 ~/.codex/openmia-custom-json/state
+    ```
+  </Accordion>
+
+  <Accordion title="Status 200 in log but no data in OpenMIA">
+    Check the OpenMIA time filter, project workspace, and the ingestion job / raw payload pages.
+  </Accordion>
+</AccordionGroup>
+
+## Privacy and security
+
+<Warning>
+  Treat the ingest key like a production secret.
+</Warning>
+
+- Do not commit `.codex/openmia-custom-json.env` to Git.
+- Do not share the ingest key in issues, logs, or screenshots.
+- If the key has ever been exposed, rotate it in OpenMIA.
+- Use `OPENMIA_CAPTURE_TEXT=false` by default in production.
+- Before enabling `OPENMIA_CAPTURE_TEXT=true`, confirm your team allows collecting prompts, tool I/O, and assistant replies.
+- The script redacts common sensitive fields, but business data handling is ultimately governed by your privacy policy.
+
+## Migration and upgrades
+
+When migrating to a new machine, copy only:
+
+```text
+~/.codex/hooks/openmia_custom_json_collector.py
+~/.codex/openmia-custom-json.env
+The hook configuration blocks in ~/.codex/config.toml
+```
+
+<Tip>
+  Do not copy `state/*.json` from the old machine unless you explicitly want to preserve old session correlations. A fresh state directory is usually cleaner.
+</Tip>
+
+When upgrading the script:
+
+<Steps>
+  <Step title="Back up the old script">
+  </Step>
+  <Step title="Replace openmia_custom_json_collector.py">
+  </Step>
+  <Step title="Run self_test --dry-run">
+  </Step>
+  <Step title="Run the real self_test">
+  </Step>
+  <Step title="Restart Codex">
+  </Step>
+  <Step title="Watch collector.log">
+  </Step>
+</Steps>
+
+## Checklist
