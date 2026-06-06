@@ -1,0 +1,83 @@
+---
+title: "Integrations"
+description: "Create and manage channels that send runtime evidence into Observation."
+---
+
+Integrations are ingestion channels. Each integration belongs to one Project and has its own ingest key, status, health, and source type.
+
+## Integration categories
+
+OpenMIA groups integrations by category so you can choose the right channel.
+
+| Category | Use it for | Examples |
+| --- | --- | --- |
+| AI Proxy | Route model API calls through OpenMIA and capture full runtime evidence. | OpenAI-compatible proxy |
+| JSON / Webhook | Send normalized traces or Runtime JSON from your own code or SDK. | Custom JSON |
+| Telemetry | Receive standardized telemetry payloads. | OpenTelemetry traces, Codex CLI OTLP logs, OpenInference |
+| External Platforms | Import traces from another observability platform. | Phoenix, Langfuse, LangSmith, Helicone |
+
+## Create an integration
+
+<Steps>
+  <Step title="Select a Project">
+    Choose one or more Projects in the Project Scope selector.
+  </Step>
+  <Step title="Open Integrations">
+    Go to **Integrations** and click **Create**.
+  </Step>
+  <Step title="Name the channel">
+    Enter a clear name, such as `Production proxy` or `Codex CLI telemetry`.
+  </Step>
+  <Step title="Choose a category and source">
+    Pick the category, then the source type.
+  </Step>
+  <Step title="Configure and create">
+    Provide any required configuration. For AI Proxy, provide the upstream base URL and upstream API key.
+  </Step>
+  <Step title="Copy the ingest key">
+    Copy the plaintext ingest key immediately. OpenMIA shows it only once.
+  </Step>
+</Steps>
+
+<Warning>
+  Do not put ingest keys in Git repositories, project-local config, screenshots, or shared logs.
+</Warning>
+
+## Channel availability
+
+The integration drawer shows a **Channel availability** switch.
+
+- **Enabled** means ingestion, upload, proxy, or telemetry can write through this channel.
+- **Paused** means OpenMIA rejects new writes for the channel.
+- **Error** is a system health state. You can reset the error after you investigate it.
+
+Use **View related Audit** from the integration drawer to inspect recent actions for the channel.
+
+## Manual import
+
+Some integrations support manual import from the integration drawer.
+
+- Custom JSON supports `.json` and `.jsonl`.
+- OTLP trace integrations support OTLP JSON.
+- Codex CLI integrations support OTLP logs JSON.
+
+Manual import creates a raw payload and an import job before traces are normalized.
+
+## Key rotation
+
+If an ingest key might be exposed, rotate it from the integration drawer.
+
+- The old key stops working.
+- A new plaintext key is shown once.
+- The database stores only a hash and key prefix.
+
+## Integration details
+
+Click an integration name to open its drawer. The drawer shows:
+
+- Project and source category
+- status and health
+- channel actions
+- manual import options
+- recent traces for that channel
+- technical metadata, including raw source system and sync mode

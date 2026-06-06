@@ -1,0 +1,82 @@
+---
+title: "Observation overview"
+description: "Understand the OpenMIA Observation workflow and the purpose of each module."
+---
+
+OpenMIA Observation is a workspace for understanding AI runtime behavior. It connects projects, ingestion channels, raw payloads, normalized traces, feedback, and audit history into one evidence chain.
+
+Use Observation when you need to answer questions like:
+
+- What did the user ask?
+- What did the model receive?
+- What did the model return?
+- Which tool was called, with which arguments, and what result came back?
+- Did a failure happen in prompt construction, model response, tool execution, retrieval, permissions, timeout, schema mismatch, or system code?
+
+<Warning>
+  Observation stores observable runtime evidence. It does not capture or infer hidden chain-of-thought.
+</Warning>
+
+## The workflow
+
+Observation follows a consistent flow:
+
+<Steps>
+  <Step title="Create Projects">
+    A Project is the tenant boundary for traces, integrations, raw payloads, import jobs, feedback, and audit events.
+  </Step>
+  <Step title="Add Integrations">
+    Integrations are channels that receive data. Examples include AI Proxy, Custom JSON, OpenTelemetry, Codex CLI, and external platform imports.
+  </Step>
+  <Step title="Ingest evidence">
+    Data enters as raw payloads through uploads, webhooks, OTLP endpoints, or the AI Proxy.
+  </Step>
+  <Step title="Inspect Traces">
+    Observation normalizes runtime evidence into traces and spans so you can debug sessions, model calls, tool calls, and errors.
+  </Step>
+  <Step title="Operate and audit">
+    Add feedback, export raw payloads, soft-delete or restore data, migrate data, and review audit history.
+  </Step>
+</Steps>
+
+## Module map
+
+<CardGroup cols={2}>
+  <Card title="Projects" icon="folder" href="/app/observation/projects">
+    Define tenant boundaries, roles, and Project Scope.
+  </Card>
+  <Card title="Integrations" icon="plug" href="/app/observation/integrations">
+    Create channels for proxy, webhook, telemetry, and import sources.
+  </Card>
+  <Card title="Ingestion" icon="arrow-down-to-line" href="/app/observation/ingestion">
+    Send runtime evidence into OpenMIA safely.
+  </Card>
+  <Card title="Traces and spans" icon="timeline" href="/app/observation/traces">
+    Read model calls, tool events, failures, input, output, and span trees.
+  </Card>
+  <Card title="Raw Payloads and Import Jobs" icon="box-archive" href="/app/observation/raw-payloads-import-jobs">
+    Track source data, normalization jobs, and ZIP exports.
+  </Card>
+  <Card title="Feedback and Audit" icon="clipboard-check" href="/app/observation/feedback-audit">
+    Add human review and inspect operational history.
+  </Card>
+</CardGroup>
+
+## Project Scope
+
+Most Observation pages use the current **Project Scope** from the page header.
+
+- No Project selected: pages show an empty state and ask you to select a Project.
+- One Project selected: modules show data for that Project.
+- Multiple Projects selected: lists group data by Project where useful.
+
+<Tip>
+  Start by selecting one Project. Add more Projects only when you want to compare or operate across them.
+</Tip>
+
+## Who should use Observation
+
+- AI engineers debugging prompt, model, tool, and retrieval behavior.
+- Product teams reviewing model quality and runtime regressions.
+- Operations teams managing integrations, imports, raw payloads, and audit trails.
+- Project owners managing member access and data lifecycle.

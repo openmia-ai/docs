@@ -1,0 +1,68 @@
+---
+title: "Security and permissions"
+description: "Understand tenant isolation, roles, ingest keys, raw data, and soft delete behavior."
+---
+
+OpenMIA Observation is multi-tenant by design. Server-side authorization always uses Project IDs and roles, not display names or Project codes.
+
+## Account and system roles
+
+OpenMIA Auth handles identity. OpenMIA App controls local application roles.
+
+| System role | Meaning |
+| --- | --- |
+| `user` | Regular application user. |
+| `admin` | Can access admin console and audit Observation globally. |
+| `super_admin` | Can manage high-risk user and system settings. |
+
+App permissions are independent from Auth permissions.
+
+## Project roles
+
+| Project role | Typical use |
+| --- | --- |
+| `viewer` | Read traces, spans, metadata, and feedback. |
+| `editor` | Add imports and feedback. |
+| `admin` | Manage integrations, members, delete/restore, and migrate Project data. |
+| `owner` | Full Project administration. |
+
+## Ingest keys
+
+Each integration has its own ingest key.
+
+- The plaintext key is shown only once.
+- The database stores only a hash and prefix.
+- The key is scoped to one Project and one integration.
+- Rotate keys if exposure is suspected.
+
+<Warning>
+  Never commit ingest keys, upstream provider keys, cookies, OAuth secrets, or raw API tokens.
+</Warning>
+
+## Raw payload and raw content access
+
+Observation stores source evidence but limits access by role.
+
+- Raw payload metadata is visible to authorized Project users.
+- Raw payload ZIP export requires Project `admin` or `owner`.
+- AI Proxy raw content is available only through authorized trace detail APIs and UI.
+- Transport credentials such as `Authorization`, cookies, API keys, tokens, passwords, and provider secrets must not be stored.
+
+## Soft delete
+
+User-facing delete actions are soft delete.
+
+- Rows remain available for audit and recovery.
+- Trash views can show deleted data.
+- Restore clears soft-delete metadata when safe.
+- Physical purge is not exposed in the user interface.
+
+## Permanent Delete in user UI
+
+For Projects, **Permanent Delete** means user-side permanent hide. It does not physically erase the record from the database. Admin audit can still see it.
+
+## Debug and admin modes
+
+OpenMIA has admin tools for system operation. Debug Mode is App-layer control and does not change Auth-side permissions.
+
+If your account is pending, disabled, or deleted, OpenMIA shows an account status page after login instead of exposing protected pages.

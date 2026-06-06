@@ -1,0 +1,90 @@
+---
+title: "Traces and spans"
+description: "Read runtime behavior, model calls, tool use, errors, and span history."
+---
+
+Traces show what happened during a runtime session or request. Spans show the steps inside the trace.
+
+## Trace list
+
+Open **Traces** to search and filter traces by Project, source, status, model, date, and integration.
+
+Trace rows show:
+
+- trace name and external ID
+- Project
+- source or integration channel
+- status
+- model
+- latency
+- span count
+- created and updated time
+
+Click a row to open trace detail.
+
+## Trace detail
+
+Trace detail includes:
+
+- trace summary, status, latency, source, and raw payload link
+- input and output
+- metadata
+- span tree
+- feedback
+- operation history
+
+For OpenMIA AI Proxy traces, the span tree can include native evidence spans such as:
+
+- `Round N · chat.completions`
+- `OpenAI request`
+- `OpenAI messages`
+- `OpenAI response`
+- `Assistant message`
+- `Tool call`
+- `Tool result`
+- `Proxy error`
+
+Click a span to inspect its input, output, metadata, raw content references, and transcript-style message content where available.
+
+## Span tree
+
+The span tree is the main runtime map. It helps you see:
+
+- parent-child relationships
+- model calls
+- tool calls and results
+- errors and missing parents
+- latency, token usage, model, and cost where available
+
+Large span trees use an internal scroll area so the page remains usable.
+
+## Read-only and editable traces
+
+Traces are read-only by default after their append window expires. Project `admin` and `owner` users can unlock a trace for editing.
+
+| State | Allowed actions |
+| --- | --- |
+| Read-only | Copy spans to another editable trace. |
+| Editable | Copy, move, and soft-delete spans. |
+
+<Warning>
+  Moving or deleting spans changes the normalized trace view. OpenMIA keeps operation history so these actions can be audited.
+</Warning>
+
+## Copy, move, and delete spans
+
+- **Copy** creates new span records in a target trace.
+- **Move** changes where existing spans belong and keeps their span identity.
+- **Delete** soft-deletes spans and descendants.
+
+Move and delete require the source trace to be editable and require Project `admin` or `owner` role.
+
+## Feedback
+
+Use the feedback panel to add human review to a trace or span. Feedback is Project-scoped and can be filtered later from the Feedback module.
+
+## History and rollback
+
+Trace operation history records create, delete, restore, span copy, span move, span delete, migration, and rollback events when supported.
+
+Rollback is only available for operations that OpenMIA can safely reverse without overwriting newer changes.

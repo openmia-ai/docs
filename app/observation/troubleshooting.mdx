@@ -1,0 +1,100 @@
+---
+title: "Troubleshooting"
+description: "Fix common Observation setup, ingestion, trace, and permission issues."
+---
+
+Use this page when data does not appear where you expect it.
+
+## No Project is selected
+
+Many Observation pages show an empty state when Project Scope is empty.
+
+Fix:
+
+1. Open the Project selector in the header.
+2. Select one or more Projects.
+3. Reload the page if you opened it from an old link.
+
+## Integration key does not work
+
+Common causes:
+
+- the key was copied incorrectly
+- the key was rotated
+- the integration is paused
+- the key belongs to a different Project or source
+- the endpoint does not match the integration source
+
+Fix:
+
+1. Open **Integrations**.
+2. Click the integration.
+3. Check **Channel availability** and **Health**.
+4. Rotate the key if needed.
+5. Use **View related Audit** to inspect recent events.
+
+## Import succeeded but no trace appears
+
+Check the Import Job.
+
+- `created.traces` may be `0` if the trace already existed.
+- `merged.traces` may be greater than `0` when new spans were appended.
+- `skipped.spans` may indicate duplicates.
+- errors can explain invalid JSON, unsupported payload type, or append-window problems.
+
+## Trace appears in the wrong Project
+
+Ingest keys bind writes to one Project and integration. If data appears in the wrong Project, the sender likely used the wrong ingest key.
+
+Fix:
+
+1. Create or select the correct integration.
+2. Rotate or copy the correct ingest key.
+3. Update the sender configuration.
+4. Migrate existing traces only if you have admin or owner role on both Projects.
+
+## AI Proxy request fails
+
+Common causes:
+
+- missing or invalid upstream provider API key
+- invalid upstream base URL
+- model not available for the upstream account
+- upstream provider returned an error
+- integration is paused or in error state
+
+Fix:
+
+1. Open the proxy integration drawer.
+2. Check **Health**.
+3. Reset error after investigation.
+4. Verify upstream credentials outside OpenMIA if needed.
+5. Inspect trace detail for proxy error evidence.
+
+## Raw payload ZIP is expired
+
+Raw payload ZIP links are temporary. After expiration, the file is deleted and the link shows an expired-file message.
+
+Fix:
+
+1. Return to **Raw Payloads**.
+2. Prepare a new ZIP export.
+3. Use **Audit** to review what the old export contained.
+
+## You cannot move or delete spans
+
+Move and delete require:
+
+- Project `admin` or `owner` role
+- an editable trace
+- same-Project target trace for span-level operations
+
+Fix:
+
+1. Open trace detail.
+2. Use the read-only/editable control if you have permission.
+3. Retry the span operation.
+
+## You cannot see Audit
+
+Audit is available only for Projects where you have `admin` or `owner` role. Viewer and editor users can use trace and feedback views, but they cannot inspect Project operation history.
